@@ -1,5 +1,7 @@
 fastapi
 uvicorn
+gunicorn
 opencv-python-headless
 google-genai
 python-multipart
+numpy
