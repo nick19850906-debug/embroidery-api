@@ -4,14 +4,14 @@ from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import os
-from google import genai
-from google.genai import types
 import traceback
 import uvicorn
+from google import genai
+from google.genai import types
 
 app = FastAPI()
 
-# CORS 에러 완벽 해결 (allow_credentials는 False 유지)
+# CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,16 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 환경 변수에서 API 키를 가져와 클라이언트 초기화
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-    if img is None: 
-        raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
+    if img is None: return 0
     
-    # 서버 메모리 터짐(OOM) 방지를 위한 해상도 안전 축소
+    # 서버 메모리 초과 방지
     max_width = 600
     height, width = img.shape
     scale_factor = 1.0
@@ -41,20 +37,24 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
-    
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
     tatami_pixels = np.sum(dist_transform >= 15)
-    
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
 @app.get("/")
 def read_root():
-    return {"status": "awake", "message": "서버가 정상 작동 중입니다."}
+    return {"status": "ok", "message": "API is Live"}
 
-# 서버가 멈추는 것을 막기 위해 async def 대신 일반 def 사용 (매우 중요)
 @app.post("/api/estimate")
 def estimate_embroidery(file: UploadFile = File(...)):
     try:
+        # 1. 여기서 API 키를 안전하게 검사합니다. (서버가 뻗지 않고 화면에 에러를 띄워줍니다)
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY 환경변수가 설정되지 않았습니다."})
+            
+        client = genai.Client(api_key=api_key)
+
         image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
@@ -69,10 +69,9 @@ def estimate_embroidery(file: UploadFile = File(...)):
            - 초기 펀칭(디지타이징) 세팅비: 난이도에 따라 $20 ~ $50 사이로 합리적으로 산정
            - 자수 작업비: 1,000침당 $1.50 기준으로 {estimated_stitches}침 계산
            - 합계 금액 (Total)
-        4. 하단에 작은 글씨(<small> 태그)로 "※ 본 견적은 AI 분석에 기반한 가견적이며, 실제 원단 및 수량에 따라 최종 단가가 변동될 수 있습니다."라는 안내를 추가하세요.
+        4. 하단에 작은 글씨(<small> 태그)로 "※ 본 견적은 AI 분석에 기반한 가견적이며, 실제 원단 재질 및 주문 수량에 따라 최종 단가가 변동될 수 있습니다."라는 안내 문구를 추가하세요.
         """
         
-        # 404 에러를 막기 위한 최신 모델 적용
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -85,8 +84,8 @@ def estimate_embroidery(file: UploadFile = File(...)):
         
     except Exception as e:
         error_msg = traceback.format_exc()
-        print(error_msg) # Render 로그에 기록
-        return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
+        print(error_msg)
+        return JSONResponse(status_code=500, content={"expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
