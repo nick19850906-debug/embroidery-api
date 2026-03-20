@@ -41,7 +41,7 @@ async def estimate_embroidery(file: UploadFile = File(...)):
         image_bytes = await file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
-        # 모델을 1.5-flash로 변경하여 속도와 안정성 확보
+        # 모델 이름을 "gemini-1.5-flash"로 수정 (models/ 제거)
         response = client.models.generate_content(
             model="gemini-1.5-flash", 
             contents=[
@@ -53,6 +53,5 @@ async def estimate_embroidery(file: UploadFile = File(...)):
         return {"expert_quote": response.text}
         
     except Exception as e:
-        # 에러 발생 시 상세 내용을 반환하도록 수정
         print(f"Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
