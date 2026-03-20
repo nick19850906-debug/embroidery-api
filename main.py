@@ -11,7 +11,7 @@ from google.genai import types
 
 app = FastAPI()
 
-# CORS 설정
+# CORS 에러 완벽 해결 (allow_credentials는 False 유지)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,45 +20,57 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 환경 변수에서 API 키를 가져와 클라이언트 초기화
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-    if img is None: return 0
+    if img is None: 
+        raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
     
-    # 서버 메모리 초과 방지
-    max_width = 600
+    # 서버 메모리 터짐(OOM) 방지를 위한 해상도 안전 축소
+    max_dim = 600
     height, width = img.shape
     scale_factor = 1.0
-    if width > max_width:
-        ratio = max_width / width
-        new_height = int(height * ratio)
-        img = cv2.resize(img, (max_width, new_height), interpolation=cv2.INTER_AREA)
-        scale_factor = (width / max_width)**2
+    if max(height, width) > max_dim:
+        if width > height:
+            new_width = max_dim
+            new_height = int(height * (max_dim / width))
+        else:
+            new_height = max_dim
+            new_width = int(width * (max_dim / height))
+        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        scale_factor = (max(height, width) / max_dim) ** 2
 
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
+    
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
     tatami_pixels = np.sum(dist_transform >= 15)
+    
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "API is Live"}
+    # 프론트엔드가 서버 기상 상태를 체크하는 용도
+    return {"status": "awake", "message": "서버가 정상 작동 중입니다."}
 
+# 서버가 멈추는 것을 막기 위해 async def 대신 일반 def 사용 (매우 중요)
 @app.post("/api/estimate")
 def estimate_embroidery(file: UploadFile = File(...)):
     try:
-        # 1. 여기서 API 키를 안전하게 검사합니다. (서버가 뻗지 않고 화면에 에러를 띄워줍니다)
+        # API 키 누락 여부 안전 검사
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY 환경변수가 설정되지 않았습니다."})
-            
-        client = genai.Client(api_key=api_key)
 
+        # 비동기가 아니므로 await 없이 읽기
         image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
-       prompt = f"""
+        # 하라 켄야 스타일의 B2B 견적서 프롬프트 (한국 원화, HTML 테이블 양식 적용)
+        prompt = f"""
         당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
         사용자가 업로드한 도안을 분석하고, 1차 계산된 예상 침수({estimated_stitches}침)를 바탕으로, 최고급 하이엔드 브랜드에 걸맞은 세련된 견적서를 작성해주세요.
         
@@ -94,6 +106,7 @@ def estimate_embroidery(file: UploadFile = File(...)):
            </div>
         """
         
+        # 최신 모델 호출 (404 Not Found 에러 원천 차단)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -106,9 +119,10 @@ def estimate_embroidery(file: UploadFile = File(...)):
         
     except Exception as e:
         error_msg = traceback.format_exc()
-        print(error_msg)
-        return JSONResponse(status_code=500, content={"expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
+        print(error_msg) # Render 로그에 기록
+        return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
+    # Render.com 자동 포트 인식
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
