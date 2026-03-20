@@ -69,6 +69,10 @@ def estimate_embroidery(file: UploadFile = File(...)):
         image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
+        # 오늘 날짜를 YYYY-MM-DD 형식으로 가져오기
+        today_date = datetime.now().strftime("%Y-%m-%d")
+
+        
         # 하라 켄야 스타일의 B2B 견적서 프롬프트 (한국 원화, HTML 테이블 양식 적용)
         prompt = f"""
         당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
