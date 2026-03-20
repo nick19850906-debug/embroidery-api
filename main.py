@@ -1,10 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import os
 from google import genai
 from google.genai import types
+import traceback
+import uvicorn
 
 app = FastAPI()
 
@@ -12,35 +15,48 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=False, # Render 클라우드 환경 오류 방지를 위해 False로 설정
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 최신 SDK 클라이언트 설정
-# 환경 변수에 GEMINI_API_KEY가 반드시 있어야 합니다.
+# 환경 변수에서 API 키를 가져와 클라이언트 초기화
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None: return 0
+    
+    # 서버 메모리 초과(OOM) 방지를 위한 해상도 최적화
+    max_width = 600
+    height, width = img.shape
+    scale_factor = 1.0
+    if width > max_width:
+        ratio = max_width / width
+        new_height = int(height * ratio)
+        img = cv2.resize(img, (max_width, new_height), interpolation=cv2.INTER_AREA)
+        scale_factor = (width / max_width)**2
+
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
     tatami_pixels = np.sum(dist_transform >= 15)
-    return int((satin_pixels * 0.15) + (tatami_pixels * 0.25))
+    return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "API is Live"}
 
+# 서버가 멈추는 것을 막기 위해 async def 대신 def 사용
 @app.post("/api/estimate")
-async def estimate_embroidery(file: UploadFile = File(...)):
+def estimate_embroidery(file: UploadFile = File(...)):
     try:
-        image_bytes = await file.read()
+        # 비동기가 아니므로 await 없이 읽기
+        image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
-# 세련된 HTML 견적서 출력을 위한 프롬프트 정의
+        # 세련된 HTML 견적서 출력을 위한 프롬프트 정의
         prompt = f"""
         당신은 20년 경력의 수석 디지털 자수 전문가입니다. 
         사용자가 업로드한 자수 도안 이미지를 분석하고, 1차 계산된 예상 침수({estimated_stitches}침)를 바탕으로 세련되고 전문적인 견적서를 작성해주세요.
@@ -54,8 +70,8 @@ async def estimate_embroidery(file: UploadFile = File(...)):
            - 합계 금액 (Total)
         4. 하단에 작은 글씨(<small> 태그)로 "※ 본 견적은 AI 분석에 기반한 가견적이며, 실제 원단 재질 및 주문 수량에 따라 최종 단가가 변동될 수 있습니다."라는 안내 문구를 추가하세요.
         """
-
-        # 최신 모델 호출 방식
+        
+        # 최신 모델 호출
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -68,4 +84,11 @@ async def estimate_embroidery(file: UploadFile = File(...)):
         
     except Exception as e:
         print(f"ERROR: {str(e)}")
+        error_msg = traceback.format_exc()
+        print(error_msg)
         raise HTTPException(status_code=500, detail=str(e))
+
+# Render 플랫폼 자동 포트 인식 및 서버 실행 코드
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
