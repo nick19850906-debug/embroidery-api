@@ -58,18 +58,40 @@ def estimate_embroidery(file: UploadFile = File(...)):
         image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
-        prompt = f"""
-        당신은 20년 경력의 수석 디지털 자수 전문가입니다. 
-        사용자가 업로드한 자수 도안 이미지를 분석하고, 1차 계산된 예상 침수({estimated_stitches}침)를 바탕으로 세련되고 전문적인 견적서를 작성해주세요.
+       prompt = f"""
+        당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
+        사용자가 업로드한 도안을 분석하고, 1차 계산된 예상 침수({estimated_stitches}침)를 바탕으로, 최고급 하이엔드 브랜드에 걸맞은 세련된 견적서를 작성해주세요.
         
-        [필수 포함 및 서식 지침]
-        1. 응답은 반드시 HTML 태그(<h2>, <table>, <ul> 등)를 사용하여 작성하세요. Markdown 기호(```html 등)는 절대 포함하지 마세요.
-        2. 디자인 분석: 로고의 복잡도, 추천 자수 기법(사틴, 다다미 등)을 전문가의 어조로 서술하세요.
-        3. 견적 내역 (HTML <table> 사용):
-           - 초기 펀칭(디지타이징) 세팅비: 난이도에 따라 $20 ~ $50 사이로 합리적으로 산정
-           - 자수 작업비: 1,000침당 $1.50 기준으로 {estimated_stitches}침 계산
-           - 합계 금액 (Total)
-        4. 하단에 작은 글씨(<small> 태그)로 "※ 본 견적은 AI 분석에 기반한 가견적이며, 실제 원단 재질 및 주문 수량에 따라 최종 단가가 변동될 수 있습니다."라는 안내 문구를 추가하세요.
+        [필수 지침]
+        1. 모든 가격은 반드시 한국 원화(KRW, 원)로 계산하세요. (초기 펀칭/디지타이징 세팅비: 난이도에 따라 30,000원 ~ 50,000원 / 자수 작업비: 1,000침당 2,000원 기준)
+        2. 응답은 순수 HTML 태그만 출력하세요. (```html 등의 마크다운은 절대 금지)
+        3. 다음 HTML 구조와 클래스명을 엄격히 지켜 작성하세요:
+           <div class="quote-wrapper">
+             <div class="quote-header">
+               <h2>자수 도안 분석 및 견적서</h2>
+               <p class="quote-date">발행일: 202X-XX-XX</p>
+             </div>
+             <div class="quote-body">
+               <div class="analysis-section">
+                 <h3>디자인 분석</h3>
+                 <p>[로고의 형태, 복잡도, 추천 자수 기법(사틴, 다다미 등)을 미니멀하고 전문적인 어조로 서술]</p>
+               </div>
+               <div class="table-section">
+                 <h3>견적 내역</h3>
+                 <table>
+                   <thead><tr><th>항목</th><th>상세 내용</th><th>금액 (KRW)</th></tr></thead>
+                   <tbody>
+                     <tr><td>초기 세팅비 (Digitizing)</td><td>패턴 분석 및 펀칭 작업</td><td>[계산 금액]원</td></tr>
+                     <tr><td>자수 가공비 (Production)</td><td>예상 침수 {estimated_stitches}침 기준</td><td>[계산 금액]원</td></tr>
+                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액]원</td></tr>
+                   </tbody>
+                 </table>
+               </div>
+             </div>
+             <div class="quote-footer">
+               <p>※ 본 견적은 AI 정밀 분석에 기반한 가견적이며, 원단과 수량에 따라 최종 단가가 조정될 수 있습니다.</p>
+             </div>
+           </div>
         """
         
         response = client.models.generate_content(
