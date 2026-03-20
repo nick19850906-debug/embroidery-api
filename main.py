@@ -6,7 +6,7 @@ import numpy as np
 import os
 import traceback
 import uvicorn
-from datetime import datetime # ★ 누락되었던 핵심 코드 추가
+from datetime import datetime
 from google import genai
 from google.genai import types
 
@@ -20,8 +20,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
@@ -45,10 +43,8 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
-    
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
     tatami_pixels = np.sum(dist_transform >= 15)
-    
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
 @app.get("/")
@@ -61,11 +57,10 @@ def estimate_embroidery(file: UploadFile = File(...)):
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY 환경변수가 설정되지 않았습니다."})
-
+            
+        client = genai.Client(api_key=api_key)
         image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
-        
-        # 오늘 날짜를 정상적으로 가져옵니다.
         today_date = datetime.now().strftime("%Y-%m-%d")
         
         prompt = f"""
@@ -104,20 +99,19 @@ def estimate_embroidery(file: UploadFile = File(...)):
            </div>
         """
         
+        mime_type = file.content_type if file.content_type else "image/png"
+        
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[
-                prompt,
-                types.Part.from_bytes(data=image_bytes, mime_type=file.content_type)
-            ]
+            contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         
         return {"expert_quote": response.text}
         
     except Exception as e:
         error_msg = traceback.format_exc()
-        print(error_msg) 
-        return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
+        print(error_msg)
+        return JSONResponse(status_code=500, content={"expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
