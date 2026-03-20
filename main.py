@@ -11,11 +11,11 @@ import uvicorn
 
 app = FastAPI()
 
-# CORS 설정
+# CORS 에러 완벽 해결 (allow_credentials는 False 유지)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False, # Render 클라우드 환경 오류 방지를 위해 False로 설정
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -26,9 +26,10 @@ client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-    if img is None: return 0
+    if img is None: 
+        raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
     
-    # 서버 메모리 초과(OOM) 방지를 위한 해상도 최적화
+    # 서버 메모리 터짐(OOM) 방지를 위한 해상도 안전 축소
     max_width = 600
     height, width = img.shape
     scale_factor = 1.0
@@ -40,23 +41,23 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
+    
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
     tatami_pixels = np.sum(dist_transform >= 15)
+    
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
 @app.get("/")
 def read_root():
-    return {"status": "ok", "message": "API is Live"}
+    return {"status": "awake", "message": "서버가 정상 작동 중입니다."}
 
-# 서버가 멈추는 것을 막기 위해 async def 대신 def 사용
+# 서버가 멈추는 것을 막기 위해 async def 대신 일반 def 사용 (매우 중요)
 @app.post("/api/estimate")
 def estimate_embroidery(file: UploadFile = File(...)):
     try:
-        # 비동기가 아니므로 await 없이 읽기
         image_bytes = file.file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
-        # 세련된 HTML 견적서 출력을 위한 프롬프트 정의
         prompt = f"""
         당신은 20년 경력의 수석 디지털 자수 전문가입니다. 
         사용자가 업로드한 자수 도안 이미지를 분석하고, 1차 계산된 예상 침수({estimated_stitches}침)를 바탕으로 세련되고 전문적인 견적서를 작성해주세요.
@@ -68,10 +69,10 @@ def estimate_embroidery(file: UploadFile = File(...)):
            - 초기 펀칭(디지타이징) 세팅비: 난이도에 따라 $20 ~ $50 사이로 합리적으로 산정
            - 자수 작업비: 1,000침당 $1.50 기준으로 {estimated_stitches}침 계산
            - 합계 금액 (Total)
-        4. 하단에 작은 글씨(<small> 태그)로 "※ 본 견적은 AI 분석에 기반한 가견적이며, 실제 원단 재질 및 주문 수량에 따라 최종 단가가 변동될 수 있습니다."라는 안내 문구를 추가하세요.
+        4. 하단에 작은 글씨(<small> 태그)로 "※ 본 견적은 AI 분석에 기반한 가견적이며, 실제 원단 및 수량에 따라 최종 단가가 변동될 수 있습니다."라는 안내를 추가하세요.
         """
         
-        # 최신 모델 호출
+        # 404 에러를 막기 위한 최신 모델 적용
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -83,12 +84,10 @@ def estimate_embroidery(file: UploadFile = File(...)):
         return {"expert_quote": response.text}
         
     except Exception as e:
-        print(f"ERROR: {str(e)}")
         error_msg = traceback.format_exc()
-        print(error_msg)
-        raise HTTPException(status_code=500, detail=str(e))
+        print(error_msg) # Render 로그에 기록
+        return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
-# Render 플랫폼 자동 포트 인식 및 서버 실행 코드
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
