@@ -42,7 +42,7 @@ async def estimate_embroidery(file: UploadFile = File(...)):
         
         # 최신 모델 호출 방식
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model="gemini-2.5-flash",
             contents=[
                 f"당신은 자수 전문가입니다. 1차 계산된 {estimated_stitches}침을 참고하여 도안 견적서를 한국어로 작성하세요.",
                 types.Part.from_bytes(data=image_bytes, mime_type=file.content_type)
