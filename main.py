@@ -3,11 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import os
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 app = FastAPI()
 
-# 모든 접속 허용 (CORS)
+# CORS 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,12 +16,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API 키 설정
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-
-# 모델 정의 (가장 안정적인 호출 방식)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# 최신 SDK 클라이언트 설정
+# 환경 변수에 GEMINI_API_KEY가 반드시 있어야 합니다.
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
@@ -34,7 +32,7 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
 @app.get("/")
 def read_root():
-    return {"status": "ok"}
+    return {"status": "ok", "message": "API is Live"}
 
 @app.post("/api/estimate")
 async def estimate_embroidery(file: UploadFile = File(...)):
@@ -42,15 +40,17 @@ async def estimate_embroidery(file: UploadFile = File(...)):
         image_bytes = await file.read()
         estimated_stitches = calculate_stitch_count(image_bytes)
         
-        # 이미지 데이터와 프롬프트 결합
-        prompt = f"당신은 자수 전문가입니다. 1차 계산된 {estimated_stitches}침을 참고하여 도안 견적서를 한국어로 작성하세요."
-        
-        response = model.generate_content([
-            prompt,
-            {'mime_type': file.content_type, 'data': image_bytes}
-        ])
+        # 최신 모델 호출 방식
+        response = client.models.generate_content(
+            model="gemini-1.5-flash",
+            contents=[
+                f"당신은 자수 전문가입니다. 1차 계산된 {estimated_stitches}침을 참고하여 도안 견적서를 한국어로 작성하세요.",
+                types.Part.from_bytes(data=image_bytes, mime_type=file.content_type)
+            ]
+        )
         
         return {"expert_quote": response.text}
         
     except Exception as e:
+        print(f"ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
