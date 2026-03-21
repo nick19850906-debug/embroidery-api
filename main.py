@@ -66,7 +66,6 @@ def estimate_embroidery(
 
         image_bytes = file.file.read()
         
-        # 1차 기초 침수 계산 후, 고객이 입력한 사이즈(width) 면적 비례 조정
         base_stitches = calculate_stitch_count(image_bytes)
         size_ratio = (float(width) / 10.0) ** 2
         estimated_stitches = int(base_stitches * size_ratio)
@@ -92,6 +91,7 @@ def estimate_embroidery(
         3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
         4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
         5. 최종 단가: 펀칭비 + (할인/할증 적용된 1장당 작업비 × 수량)
+        6. ★중요 표기법: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍어 표기하세요. (예: 50000원 -> 50,000원, 36376원 -> 36,376원)
 
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
@@ -111,9 +111,9 @@ def estimate_embroidery(
                  <table>
                    <thead><tr><th>항목</th><th>상세 내용</th><th>금액 (KRW)</th></tr></thead>
                    <tbody>
-                     <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액]원</td></tr>
-                     <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액]원</td></tr>
-                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액]원</td></tr>
+                     <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액, 콤마 필수]원</td></tr>
+                     <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액, 콤마 필수]원</td></tr>
+                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액, 콤마 필수]원</td></tr>
                    </tbody>
                  </table>
                </div>
