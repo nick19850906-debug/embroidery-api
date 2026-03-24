@@ -6,6 +6,7 @@ import numpy as np
 import os
 import traceback
 import uvicorn
+import fitz  # AI 및 PDF 변환을 위한 PyMuPDF 라이브러리 추가
 from datetime import datetime
 from google import genai
 from google.genai import types
@@ -65,7 +66,22 @@ def estimate_embroidery(
             return JSONResponse(status_code=500, content={"expert_quote": "API 키가 설정되지 않았습니다."})
 
         image_bytes = file.file.read()
-        
+        filename = file.filename.lower()
+        mime_type = file.content_type if file.content_type else "image/png"
+
+        # ★ AI 파일 및 PDF 처리 로직 추가 ★
+        if filename.endswith(".ai") or filename.endswith(".pdf"):
+            try:
+                # AI 파일 내부에 포함된 PDF 호환 스트림을 추출하여 렌더링
+                doc = fitz.open(stream=image_bytes, filetype="pdf")
+                page = doc.load_page(0) # 첫 페이지 로드
+                pix = page.get_pixmap(dpi=150) # DPI 150 해상도의 고화질 픽셀 이미지로 변환
+                image_bytes = pix.tobytes("png")
+                mime_type = "image/png"
+            except Exception as convert_err:
+                return JSONResponse(status_code=422, content={"expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ AI 파일 변환 실패</strong><br>일러스트레이터에서 저장 시 <b>'PDF 호환 파일 만들기'</b> 옵션을 켜고 저장한 파일만 지원됩니다.</div>"})
+
+        # 침수 계산 (이미지 형태이든, AI 파일에서 변환된 형태이든 동일하게 처리)
         base_stitches = calculate_stitch_count(image_bytes)
         size_ratio = (float(width) / 10.0) ** 2
         estimated_stitches = int(base_stitches * size_ratio)
@@ -91,7 +107,7 @@ def estimate_embroidery(
         3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
         4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
         5. 최종 단가: 펀칭비 + (할인/할증 적용된 1장당 작업비 × 수량)
-        6. ★중요 표기법: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍어 표기하세요. (예: 50000원 -> 50,000원, 36376원 -> 36,376원)
+        6. ★중요 표기법: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍어 표기하세요.
 
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
@@ -104,7 +120,7 @@ def estimate_embroidery(
              <div class="quote-body">
                <div class="analysis-section">
                  <h3>디자인 및 옵션 분석</h3>
-                 <p>[선택한 옵션(원단, 크기 등)이 자수 품질에 미치는 영향과 추천 기법 서술]</p>
+                 <p>[선택한 옵션이 자수 품질에 미치는 영향과 추천 기법 서술]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
@@ -126,7 +142,7 @@ def estimate_embroidery(
         
         response = client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=file.content_type)]
+            contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         return {"expert_quote": response.text}
     except Exception as e:
