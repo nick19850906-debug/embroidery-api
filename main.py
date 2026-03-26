@@ -6,13 +6,13 @@ import numpy as np
 import os
 import traceback
 import uvicorn
+import fitz  # ★ 누락되었던 AI 및 PDF 변환 라이브러리 복구
 from datetime import datetime
 from google import genai
 from google.genai import types
 
 app = FastAPI()
 
-# CORS 에러 완벽 해결
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,13 +21,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None: 
         raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
     
-    # 서버 메모리 초과 방지
     max_dim = 600
     height, width = img.shape
     scale_factor = 1.0
@@ -51,7 +52,6 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 def read_root():
     return {"status": "awake", "message": "서버가 정상 작동 중입니다."}
 
-# ★ 옵션(Form) 파라미터가 완벽히 부활했습니다.
 @app.post("/api/estimate")
 def estimate_embroidery(
     file: UploadFile = File(...),
@@ -64,11 +64,25 @@ def estimate_embroidery(
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
             return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."})
-            
-        client = genai.Client(api_key=api_key)
+
         image_bytes = file.file.read()
-        
-        # 기본 침수 계산 후 고객 입력 사이즈(width)에 비례하여 침수 재조정
+        filename = file.filename.lower() if file.filename else ""
+        mime_type = file.content_type if file.content_type else "image/png"
+
+        # ★ AI 및 PDF 파일 고화질 변환 로직 복구 완료 ★
+        if filename.endswith(".ai") or filename.endswith(".pdf"):
+            try:
+                doc = fitz.open(stream=image_bytes, filetype="pdf")
+                page = doc.load_page(0)
+                pix = page.get_pixmap(dpi=150)
+                image_bytes = pix.tobytes("png")
+                mime_type = "image/png"
+            except Exception as convert_err:
+                return JSONResponse(status_code=422, content={
+                    "error_detail": str(convert_err),
+                    "expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ AI 파일 변환 실패</strong><br>일러스트레이터에서 저장 시 <b>'PDF 호환 파일 만들기'</b> 옵션을 켜고 저장한 파일만 지원됩니다.</div>"
+                })
+
         base_stitches = calculate_stitch_count(image_bytes)
         size_ratio = (float(width) / 10.0) ** 2
         estimated_stitches = int(base_stitches * size_ratio)
@@ -79,7 +93,7 @@ def estimate_embroidery(
         
         prompt = f"""
         당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
-        업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 세련된 견적서를 작성해주세요.
+        업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 견적서를 작성해주세요.
         
         [고객 요청 옵션]
         - 가로 크기: {width} cm
@@ -89,7 +103,7 @@ def estimate_embroidery(
         - 1차 예상 침수: {estimated_stitches} 침
         
         [단가 계산 지침]
-        1. 펀칭비(세팅비): 기본 30,000원. 복잡도에 따라 상향.
+        1. 펀칭비(세팅비): 기본 30,000원. 복잡하면 상향.
         2. 기본 작업비: 1,000침 당 2,000원 기준.
         3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
         4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
@@ -127,7 +141,6 @@ def estimate_embroidery(
            </div>
         """
         
-        mime_type = file.content_type if file.content_type else "image/png"
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
