@@ -6,13 +6,13 @@ import numpy as np
 import os
 import traceback
 import uvicorn
-import fitz  # AI 및 PDF 변환을 위한 PyMuPDF 라이브러리 추가
 from datetime import datetime
 from google import genai
 from google.genai import types
 
 app = FastAPI()
 
+# CORS 에러 완벽 해결
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,14 +21,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None: 
-        raise ValueError("이미지를 해독할 수 없습니다.")
+        raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
     
+    # 서버 메모리 초과 방지
     max_dim = 600
     height, width = img.shape
     scale_factor = 1.0
@@ -50,8 +49,9 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
 @app.get("/")
 def read_root():
-    return {"status": "awake"}
+    return {"status": "awake", "message": "서버가 정상 작동 중입니다."}
 
+# ★ 옵션(Form) 파라미터가 완벽히 부활했습니다.
 @app.post("/api/estimate")
 def estimate_embroidery(
     file: UploadFile = File(...),
@@ -63,25 +63,12 @@ def estimate_embroidery(
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            return JSONResponse(status_code=500, content={"expert_quote": "API 키가 설정되지 않았습니다."})
-
+            return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."})
+            
+        client = genai.Client(api_key=api_key)
         image_bytes = file.file.read()
-        filename = file.filename.lower()
-        mime_type = file.content_type if file.content_type else "image/png"
-
-        # ★ AI 파일 및 PDF 처리 로직 추가 ★
-        if filename.endswith(".ai") or filename.endswith(".pdf"):
-            try:
-                # AI 파일 내부에 포함된 PDF 호환 스트림을 추출하여 렌더링
-                doc = fitz.open(stream=image_bytes, filetype="pdf")
-                page = doc.load_page(0) # 첫 페이지 로드
-                pix = page.get_pixmap(dpi=150) # DPI 150 해상도의 고화질 픽셀 이미지로 변환
-                image_bytes = pix.tobytes("png")
-                mime_type = "image/png"
-            except Exception as convert_err:
-                return JSONResponse(status_code=422, content={"expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ AI 파일 변환 실패</strong><br>일러스트레이터에서 저장 시 <b>'PDF 호환 파일 만들기'</b> 옵션을 켜고 저장한 파일만 지원됩니다.</div>"})
-
-        # 침수 계산 (이미지 형태이든, AI 파일에서 변환된 형태이든 동일하게 처리)
+        
+        # 기본 침수 계산 후 고객 입력 사이즈(width)에 비례하여 침수 재조정
         base_stitches = calculate_stitch_count(image_bytes)
         size_ratio = (float(width) / 10.0) ** 2
         estimated_stitches = int(base_stitches * size_ratio)
@@ -92,7 +79,7 @@ def estimate_embroidery(
         
         prompt = f"""
         당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
-        업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 견적서를 작성해주세요.
+        업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 세련된 견적서를 작성해주세요.
         
         [고객 요청 옵션]
         - 가로 크기: {width} cm
@@ -102,12 +89,12 @@ def estimate_embroidery(
         - 1차 예상 침수: {estimated_stitches} 침
         
         [단가 계산 지침]
-        1. 펀칭비(세팅비): 기본 30,000원. 복잡하면 상향.
+        1. 펀칭비(세팅비): 기본 30,000원. 복잡도에 따라 상향.
         2. 기본 작업비: 1,000침 당 2,000원 기준.
         3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
         4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
         5. 최종 단가: 펀칭비 + (할인/할증 적용된 1장당 작업비 × 수량)
-        6. ★중요 표기법: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍어 표기하세요.
+        6. ★중요 표기법: 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍어 표기하세요.
 
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
@@ -120,7 +107,7 @@ def estimate_embroidery(
              <div class="quote-body">
                <div class="analysis-section">
                  <h3>디자인 및 옵션 분석</h3>
-                 <p>[선택한 옵션이 자수 품질에 미치는 영향과 추천 기법 서술]</p>
+                 <p>[선택한 옵션(원단, 크기 등)이 자수 품질에 미치는 영향과 추천 기법 서술]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
@@ -140,14 +127,16 @@ def estimate_embroidery(
            </div>
         """
         
+        mime_type = file.content_type if file.content_type else "image/png"
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         return {"expert_quote": response.text}
+        
     except Exception as e:
         print(traceback.format_exc())
-        return JSONResponse(status_code=500, content={"expert_quote": f"<div style='color:#e74c3c;'>서버 오류: {str(e)}</div>"})
+        return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
