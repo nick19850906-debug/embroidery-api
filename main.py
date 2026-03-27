@@ -6,14 +6,13 @@ import numpy as np
 import os
 import traceback
 import uvicorn
-import fitz  # AI 및 PDF 변환용 라이브러리
-from datetime import datetime
+import fitz  
+from datetime import datetime, timezone, timedelta # ★ 한국 시간 적용을 위한 모듈 추가
 from google import genai
 from google.genai import types
 
 app = FastAPI()
 
-# CORS 에러 완벽 해결
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,13 +21,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None: 
         raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
     
-    # 서버 메모리 초과 방지를 위한 안전 축소
     max_dim = 600
     height, width = img.shape
     scale_factor = 1.0
@@ -44,10 +44,8 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
-    
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
     tatami_pixels = np.sum(dist_transform >= 15)
-    
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
 @app.get("/")
@@ -65,14 +63,12 @@ def estimate_embroidery(
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY 환경변수가 설정되지 않았습니다."})
-            
-        client = genai.Client(api_key=api_key)
+            return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."})
+
         image_bytes = file.file.read()
         filename = file.filename.lower() if file.filename else ""
         mime_type = file.content_type if file.content_type else "image/png"
 
-        # AI 및 PDF 파일 고화질 변환 로직
         if filename.endswith(".ai") or filename.endswith(".pdf"):
             try:
                 doc = fitz.open(stream=image_bytes, filetype="pdf")
@@ -92,10 +88,12 @@ def estimate_embroidery(
         if estimated_stitches < 1000:
             estimated_stitches = 1000
             
-        today_date = datetime.now().strftime("%Y-%m-%d")
+        # ★ 한국 표준시(KST)로 정확한 오늘 날짜 추출
+        KST = timezone(timedelta(hours=9))
+        today_date = datetime.now(KST).strftime("%Y-%m-%d")
         
         prompt = f"""
-        당신은 한국의 자수장인 수석 디지털 자수 디자이너입니다. 
+        당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
         업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 견적서를 작성해주세요.
         
         [고객 요청 옵션]
@@ -111,7 +109,7 @@ def estimate_embroidery(
         3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
         4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
         5. 최종 단가: 펀칭비 + (할인/할증 적용된 1장당 작업비 × 수량)
-        6. ★중요 표기법: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍어 표기하세요.
+        6. ★절대 주의(콤마 표기): 모든 금액(특히 총 합계)은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍으세요! (예: 86376원 -> 86,376원)
 
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
@@ -124,7 +122,7 @@ def estimate_embroidery(
              <div class="quote-body">
                <div class="analysis-section">
                  <h3>디자인 및 옵션 분석</h3>
-                 <p>[선택한 옵션(원단, 크기 등)이 자수 품질에 미치는 영향과 추천 기법 서술]</p>
+                 <p>[선택한 옵션이 자수 품질에 미치는 영향과 추천 기법 서술. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 1~2회 삽입하여 문단을 나누고 줄바꿈을 해주세요.]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
@@ -148,7 +146,6 @@ def estimate_embroidery(
             model="gemini-2.5-flash",
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
-        
         return {"expert_quote": response.text}
         
     except Exception as e:
