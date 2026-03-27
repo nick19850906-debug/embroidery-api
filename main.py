@@ -6,10 +6,16 @@ import numpy as np
 import os
 import traceback
 import uvicorn
-import fitz  # ★ AI 및 PDF 해독 라이브러리
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
+
+# ★ 해독기(PyMuPDF)가 정상적으로 설치되었는지 안전하게 확인하는 방어 코드
+try:
+    import fitz  
+    HAS_FITZ = True
+except ImportError:
+    HAS_FITZ = False
 
 app = FastAPI()
 
@@ -21,11 +27,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None: 
-        raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
+        raise ValueError("이미지를 해독할 수 없습니다. AI/PDF 파일이거나 손상된 파일입니다.")
     
     max_dim = 600
     height, width = img.shape
@@ -63,13 +71,17 @@ def estimate_embroidery(
         if not api_key:
             return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."})
 
-        client = genai.Client(api_key=api_key)
         image_bytes = file.file.read()
         filename = file.filename.lower() if file.filename else ""
         mime_type = file.content_type if file.content_type else "image/png"
 
-        # ★ AI 및 PDF 파일 고화질 이미지 변환 (500 에러 해결)
+        # ★ AI 및 PDF 파일 고화질 이미지 변환 로직
         if filename.endswith(".ai") or filename.endswith(".pdf"):
+            if not HAS_FITZ:
+                # requirements.txt 세팅을 실수하셨을 경우 서버가 죽지 않고 화면에 친절히 에러를 띄웁니다.
+                return JSONResponse(status_code=500, content={
+                    "expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ 서버 설정 오류</strong><br>서버에 일러스트 해독기(PyMuPDF)가 설치되지 않았습니다.<br>깃허브 requirements.txt에 pymupdf를 꼭 추가해주세요.</div>"
+                })
             try:
                 doc = fitz.open(stream=image_bytes, filetype="pdf")
                 page = doc.load_page(0)
@@ -82,7 +94,13 @@ def estimate_embroidery(
                     "expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ AI 파일 변환 실패</strong><br>일러스트레이터에서 저장 시 <b>'PDF 호환 파일 만들기'</b> 옵션을 켜고 저장한 파일만 지원됩니다.</div>"
                 })
 
-        base_stitches = calculate_stitch_count(image_bytes)
+        try:
+            base_stitches = calculate_stitch_count(image_bytes)
+        except ValueError as ve:
+            return JSONResponse(status_code=422, content={
+                "expert_quote": f"<div style='text-align:center; color:#e74c3c;'><strong>❌ 해독 불가</strong><br>{str(ve)}</div>"
+            })
+
         size_ratio = (float(width) / 10.0) ** 2
         estimated_stitches = int(base_stitches * size_ratio)
         if estimated_stitches < 1000:
@@ -145,7 +163,8 @@ def estimate_embroidery(
         return {"expert_quote": response.text}
         
     except Exception as e:
-        print(traceback.format_exc())
+        error_msg = traceback.format_exc()
+        print(error_msg)
         return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
