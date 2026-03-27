@@ -6,7 +6,7 @@ import numpy as np
 import os
 import traceback
 import uvicorn
-import fitz  
+import fitz  # ★ AI 및 PDF 해독 라이브러리
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
@@ -20,8 +20,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
@@ -65,10 +63,12 @@ def estimate_embroidery(
         if not api_key:
             return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."})
 
+        client = genai.Client(api_key=api_key)
         image_bytes = file.file.read()
         filename = file.filename.lower() if file.filename else ""
         mime_type = file.content_type if file.content_type else "image/png"
 
+        # ★ AI 및 PDF 파일 고화질 이미지 변환 (500 에러 해결)
         if filename.endswith(".ai") or filename.endswith(".pdf"):
             try:
                 doc = fitz.open(stream=image_bytes, filetype="pdf")
@@ -91,7 +91,6 @@ def estimate_embroidery(
         KST = timezone(timedelta(hours=9))
         today_date = datetime.now(KST).strftime("%Y-%m-%d")
         
-        # ★ 수정된 프롬프트: 지엽적인 철학을 빼고, 신뢰감을 주는 보편적이고 전문적인 실무 해설로 변경했습니다.
         prompt = f"""
         당신은 20년 이상의 실무 경험을 갖춘 수석 디지털 자수 디자이너이자 B2B 의류 생산 전문가입니다. 
         사용자가 업로드한 도안과 [고객 요청 옵션]을 바탕으로, 고객에게 깊은 신뢰감을 주고 브랜드의 가치를 높여줄 수 있는 보편적이면서도 세련된 견적서를 작성해주세요.
@@ -109,7 +108,7 @@ def estimate_embroidery(
         3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
         4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
         5. 최종 단가: 펀칭비 + (할인/할증 적용된 1장당 작업비 × 수량)
-        6. ★절대 주의(콤마 표기): 모든 금액(특히 총 합계)은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍으세요! (예: 86376원 -> 86,376원)
+        6. ★절대 주의: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍으세요.
 
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
@@ -122,22 +121,19 @@ def estimate_embroidery(
              <div class="quote-body">
                <div class="analysis-section">
                  <h3>디자인 및 옵션 분석</h3>
-                 <p>[도안의 형태적 특징, 시각적 밸런스, 그리고 선택한 '{fabric}' 원단과 자수 기법이 어떻게 조화를 이루어 최고 품질의 결과물을 만들어낼 수 있는지 보편적이고 전문적인 어조로 해설하세요. 특정한 예술 철학에 치우치지 말고, 실제 자수 공정과 완성도에 초점을 맞춰 고객이 전문성과 신뢰를 느낄 수 있도록 작성하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 1~2회 삽입하여 가독성을 높여주세요.]</p>
+                 <p>[도안의 형태적 특징, 시각적 밸런스, 그리고 선택한 원단과 자수 기법이 어떻게 조화를 이루어 최고 품질의 결과물을 만들어낼 수 있는지 실무적인 어조로 해설하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 삽입하여 줄바꿈을 해주세요.]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
                  <table>
                    <thead><tr><th>항목</th><th>상세 내용</th><th>금액 (KRW)</th></tr></thead>
                    <tbody>
-                     <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액, 콤마 필수]원</td></tr>
-                     <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액, 콤마 필수]원</td></tr>
-                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액, 콤마 필수]원</td></tr>
+                     <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액]원</td></tr>
+                     <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액]원</td></tr>
+                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액]원</td></tr>
                    </tbody>
                  </table>
                </div>
-             </div>
-             <div class="quote-footer">
-               <p>※ 본 견적은 AI 정밀 분석에 기반한 가견적이며, 실제 로고 난이도에 따라 단가가 조정될 수 있습니다.</p>
              </div>
            </div>
         """
@@ -149,8 +145,7 @@ def estimate_embroidery(
         return {"expert_quote": response.text}
         
     except Exception as e:
-        error_msg = traceback.format_exc()
-        print(error_msg)
+        print(traceback.format_exc())
         return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
