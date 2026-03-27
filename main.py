@@ -7,7 +7,7 @@ import os
 import traceback
 import uvicorn
 import fitz  
-from datetime import datetime, timezone, timedelta # ★ 한국 시간 적용을 위한 모듈 추가
+from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
 
@@ -88,13 +88,13 @@ def estimate_embroidery(
         if estimated_stitches < 1000:
             estimated_stitches = 1000
             
-        # ★ 한국 표준시(KST)로 정확한 오늘 날짜 추출
         KST = timezone(timedelta(hours=9))
         today_date = datetime.now(KST).strftime("%Y-%m-%d")
         
+        # ★ 수정된 프롬프트: 지엽적인 철학을 빼고, 신뢰감을 주는 보편적이고 전문적인 실무 해설로 변경했습니다.
         prompt = f"""
-        당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
-        업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 견적서를 작성해주세요.
+        당신은 20년 이상의 실무 경험을 갖춘 수석 디지털 자수 디자이너이자 B2B 의류 생산 전문가입니다. 
+        사용자가 업로드한 도안과 [고객 요청 옵션]을 바탕으로, 고객에게 깊은 신뢰감을 주고 브랜드의 가치를 높여줄 수 있는 보편적이면서도 세련된 견적서를 작성해주세요.
         
         [고객 요청 옵션]
         - 가로 크기: {width} cm
@@ -122,7 +122,7 @@ def estimate_embroidery(
              <div class="quote-body">
                <div class="analysis-section">
                  <h3>디자인 및 옵션 분석</h3>
-                 <p>[선택한 옵션이 자수 품질에 미치는 영향과 추천 기법 서술. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 1~2회 삽입하여 문단을 나누고 줄바꿈을 해주세요.]</p>
+                 <p>[도안의 형태적 특징, 시각적 밸런스, 그리고 선택한 '{fabric}' 원단과 자수 기법이 어떻게 조화를 이루어 최고 품질의 결과물을 만들어낼 수 있는지 보편적이고 전문적인 어조로 해설하세요. 특정한 예술 철학에 치우치지 말고, 실제 자수 공정과 완성도에 초점을 맞춰 고객이 전문성과 신뢰를 느낄 수 있도록 작성하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 1~2회 삽입하여 가독성을 높여주세요.]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
