@@ -47,6 +47,7 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
         scale_factor = (max(height, width) / max_dim) ** 2
 
+    # 거리 변환(Distance Transform)을 이용한 여백(Negative Space) 제외 및 침수 계산 로직
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
@@ -123,7 +124,7 @@ def estimate_embroidery(
         1. 펀칭비(세팅비): '{punching}' 옵션이 '기존 파일 보유'면 0원, '단순 글자/이니셜'이면 11,000원, '신규 로고 펀칭'이면 기본 22,000원에서 복잡도에 따라 상향 적용.
         2. 기본 자수비(1장당): 1,000침 당 2,000원 기준.
         3. 품목 및 후가공 할증(1장당): '{type_pos}'가 '캡모자 자수'면 난이도 할증 부과, 패치의 경우 '열접착'은 +500원, '벨크로'는 +1,500원 추가.
-        4. 원단 및 실 할증(1장당): '{fabric}'이 데님/가죽/실크/신축성이거나 '{thread}'가 '7도 이상 다색상' 혹은 '특수사'일 경우 실 교체 시간 및 난이도를 고려하여 자수비의 15~20% 할증.
+        4. 원단 및 실 할증(1장당): '{fabric}'이 데님/가죽/실크/신축성이거나 '{thread}'가 '7도 이상 다색상' 혹은 '특수사'일 경우 실 교체 시간 및 난이도를 고려하여 자수비의 15~20% 할증 부과.
         5. 수량 할인(도매가): '{quantity}'장이 10장 이상 10%, 30장 이상 20%, 50장 이상 30%, 100장 이상 50%의 자수비 할인 적용.
         6. 최종 총 합계: 펀칭비 + [{{(할인/할증이 적용된 1장당 자수비) + 1장당 후가공비}} * {quantity}].
         7. ★절대 주의(콤마 표기): 모든 금액(특히 총 합계)은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍으세요. (예: 86,376원)
@@ -139,7 +140,7 @@ def estimate_embroidery(
              <div class="quote-body">
                <div class="analysis-section">
                  <h3>디자인 및 공정 분석</h3>
-                 <p>[도안의 형태적 특징, '{type_pos}' 및 '{punching}' 옵션에 따른 공정의 차이, '{fabric}' 원단과 '{thread}'의 조합이 자수 품질에 미치는 영향을 실무적이고 전문적인 어조로 해설하세요. 당사의 'AI 정밀 픽셀 분석 시스템'이 불필요한 여백을 배제하고 정확한 바늘땀만 스캔하여 정직한 견적을 산출했음을 어필하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 1~2회 삽입하세요.]</p>
+                 <p>[도안의 형태적 특징, '{type_pos}' 및 '{punching}' 옵션에 따른 공정의 차이, '{fabric}' 원단과 '{thread}'의 조합이 자수 품질에 미치는 영향을 실무적이고 전문적인 어조로 해설하세요. 당사의 'AI 정밀 픽셀 분석 시스템'이 불필요한 여백을 완벽히 배제하고 정확한 바늘땀만 스캔하여 정직한 견적을 산출했음을 어필하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 1~2회 삽입하세요.]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
@@ -167,8 +168,7 @@ def estimate_embroidery(
         return {"expert_quote": response.text}
         
     except Exception as e:
-        error_msg = traceback.format_exc()
-        print(error_msg)
+        print(traceback.format_exc())
         return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
