@@ -64,8 +64,8 @@ def estimate_embroidery(
     width: str = Form("10"),
     quantity: int = Form(1),
     fabric: str = Form("일반 면/폴리"),
-    punching: str = Form("신규 로고 펀칭"),    # 신규 추가: 펀칭 파일 여부
-    thread: str = Form("일반사 (1~6도)")       # 신규 추가: 실 종류/색상
+    punching: str = Form("신규 로고 펀칭"),
+    thread: str = Form("일반사 (1~6도)")
 ):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
