@@ -47,7 +47,6 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
         img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
         scale_factor = (max(height, width) / max_dim) ** 2
 
-    # 거리 변환(Distance Transform)을 이용한 여백(Negative Space) 제외 및 침수 계산 로직
     _, binary = cv2.threshold(img, 127, 255, cv2.THRESH_BINARY_INV)
     dist_transform = cv2.distanceTransform(binary, cv2.DIST_L2, 5)
     satin_pixels = np.sum((dist_transform > 0) & (dist_transform < 15))
