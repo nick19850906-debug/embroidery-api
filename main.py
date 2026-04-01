@@ -6,16 +6,10 @@ import numpy as np
 import os
 import traceback
 import uvicorn
+import fitz  # AI 및 PDF 변환 라이브러리
 from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
-
-# ★ 해독기(PyMuPDF)가 정상적으로 설치되었는지 안전하게 확인하는 방어 코드
-try:
-    import fitz  
-    HAS_FITZ = True
-except ImportError:
-    HAS_FITZ = False
 
 app = FastAPI()
 
@@ -33,7 +27,7 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
     if img is None: 
-        raise ValueError("이미지를 해독할 수 없습니다. AI/PDF 파일이거나 손상된 파일입니다.")
+        raise ValueError("이미지를 해독할 수 없습니다. 정상적인 이미지인지 확인해주세요.")
     
     max_dim = 600
     height, width = img.shape
@@ -64,7 +58,9 @@ def estimate_embroidery(
     width: str = Form("10"),
     quantity: int = Form(1),
     position: str = Form("좌측 가슴"),
-    fabric: str = Form("일반 면/폴리")
+    fabric: str = Form("일반 면/폴리"),
+    colors: str = Form("1~6도 (기본)"),    # 신규 옵션 1
+    turnaround: str = Form("일반 제작")     # 신규 옵션 2
 ):
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
@@ -75,13 +71,8 @@ def estimate_embroidery(
         filename = file.filename.lower() if file.filename else ""
         mime_type = file.content_type if file.content_type else "image/png"
 
-        # ★ AI 및 PDF 파일 고화질 이미지 변환 로직
+        # AI 파일 및 PDF 고화질 변환
         if filename.endswith(".ai") or filename.endswith(".pdf"):
-            if not HAS_FITZ:
-                # requirements.txt 세팅을 실수하셨을 경우 서버가 죽지 않고 화면에 친절히 에러를 띄웁니다.
-                return JSONResponse(status_code=500, content={
-                    "expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ 서버 설정 오류</strong><br>서버에 일러스트 해독기(PyMuPDF)가 설치되지 않았습니다.<br>깃허브 requirements.txt에 pymupdf를 꼭 추가해주세요.</div>"
-                })
             try:
                 doc = fitz.open(stream=image_bytes, filetype="pdf")
                 page = doc.load_page(0)
@@ -94,13 +85,7 @@ def estimate_embroidery(
                     "expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ AI 파일 변환 실패</strong><br>일러스트레이터에서 저장 시 <b>'PDF 호환 파일 만들기'</b> 옵션을 켜고 저장한 파일만 지원됩니다.</div>"
                 })
 
-        try:
-            base_stitches = calculate_stitch_count(image_bytes)
-        except ValueError as ve:
-            return JSONResponse(status_code=422, content={
-                "expert_quote": f"<div style='text-align:center; color:#e74c3c;'><strong>❌ 해독 불가</strong><br>{str(ve)}</div>"
-            })
-
+        base_stitches = calculate_stitch_count(image_bytes)
         size_ratio = (float(width) / 10.0) ** 2
         estimated_stitches = int(base_stitches * size_ratio)
         if estimated_stitches < 1000:
@@ -110,23 +95,25 @@ def estimate_embroidery(
         today_date = datetime.now(KST).strftime("%Y-%m-%d")
         
         prompt = f"""
-        당신은 20년 이상의 실무 경험을 갖춘 수석 디지털 자수 디자이너이자 B2B 의류 생산 전문가입니다. 
-        사용자가 업로드한 도안과 [고객 요청 옵션]을 바탕으로, 고객에게 깊은 신뢰감을 주고 브랜드의 가치를 높여줄 수 있는 보편적이면서도 세련된 견적서를 작성해주세요.
+        당신은 하라 켄야(Kenya Hara)의 미니멀리즘 철학을 따르는 수석 디지털 자수 디자이너입니다. 
+        업로드한 도안과 [고객 요청 옵션]을 바탕으로 최고급 하이엔드 브랜드에 걸맞은 견적서를 작성해주세요.
         
         [고객 요청 옵션]
         - 가로 크기: {width} cm
         - 주문 수량: {quantity} 장
         - 자수 위치: {position}
         - 원단 재질: {fabric}
+        - 사용 색상: {colors}
+        - 납기 일정: {turnaround}
         - 1차 예상 침수: {estimated_stitches} 침
         
-        [단가 계산 지침]
-        1. 펀칭비(세팅비): 기본 30,000원. 복잡하면 상향.
+        [실무 단가 계산 지침]
+        1. 펀칭비(세팅비): 기본 30,000원. 복잡도에 따라 상향.
         2. 기본 작업비: 1,000침 당 2,000원 기준.
-        3. 원단 할증: '{fabric}'이 데님, 가죽, 실크, 신축성, 3D입체자수일 경우 작업비에 15% 할증 부과. 일반 면/폴리는 할증 없음.
-        4. 수량 할인: '{quantity}'장이 50장 이상이면 작업비 30% 할인, 100장 이상이면 50% 할인.
-        5. 최종 단가: 펀칭비 + (할인/할증 적용된 1장당 작업비 × 수량)
-        6. ★절대 주의: 모든 금액은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍으세요.
+        3. 원단/색상 할증: '{fabric}'이 특수 원단이거나, '{colors}'가 '7도 이상' 또는 '특수사'일 경우 작업비에 각각 15% 할증 부과.
+        4. 수량 할인(도매가): '{quantity}'장이 12장 이상이면 15%, 48장 이상이면 30%, 100장 이상이면 50%의 작업비 할인 적용.
+        5. 납기일 할증(Rush Fee): '{turnaround}'이 '빠른 제작'이면 총액의 25% 할증, '긴급 제작'이면 총액의 50% 할증 적용.
+        6. ★절대 주의(콤마 표기): 모든 금액(특히 총 합계)은 가독성을 위해 반드시 천 단위마다 콤마(,)를 찍으세요. (예: 50000 -> 50,000)
 
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
@@ -138,8 +125,8 @@ def estimate_embroidery(
              </div>
              <div class="quote-body">
                <div class="analysis-section">
-                 <h3>디자인 및 옵션 분석</h3>
-                 <p>[도안의 형태적 특징, 시각적 밸런스, 그리고 선택한 원단과 자수 기법이 어떻게 조화를 이루어 최고 품질의 결과물을 만들어낼 수 있는지 실무적인 어조로 해설하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 삽입하여 줄바꿈을 해주세요.]</p>
+                 <h3>디자인 및 공정 분석</h3>
+                 <p>[도안의 특징과 선택된 6가지 옵션들이 실제 자수 공정(품질, 시간, 난이도)에 미치는 영향을 실무적이고 전문적인 어조로 설명. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 삽입하세요.]</p>
                </div>
                <div class="table-section">
                  <h3>견적 내역 ({quantity}장 기준)</h3>
@@ -148,7 +135,8 @@ def estimate_embroidery(
                    <tbody>
                      <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액]원</td></tr>
                      <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액]원</td></tr>
-                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액]원</td></tr>
+                     <tr><td>급행 수수료 (Rush Fee)</td><td>[납기 일정에 따른 할증액 명시, 없으면 0원]</td><td>[계산 금액]원</td></tr>
+                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[최종 합계 금액]원</td></tr>
                    </tbody>
                  </table>
                </div>
@@ -163,8 +151,7 @@ def estimate_embroidery(
         return {"expert_quote": response.text}
         
     except Exception as e:
-        error_msg = traceback.format_exc()
-        print(error_msg)
+        print(traceback.format_exc())
         return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
 
 if __name__ == "__main__":
