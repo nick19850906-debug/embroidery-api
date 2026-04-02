@@ -1,5 +1,5 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, UploadFile, File, Form
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
@@ -10,9 +10,8 @@ from datetime import datetime, timezone, timedelta
 from google import genai
 from google.genai import types
 
-# ★ 해독기(PyMuPDF)가 정상적으로 설치되었는지 안전하게 확인하는 방어 코드
 try:
-    import fitz  
+    import fitz
     HAS_FITZ = True
 except ImportError:
     HAS_FITZ = False
@@ -29,12 +28,13 @@ app.add_middleware(
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
+
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_GRAYSCALE)
-    if img is None: 
+    if img is None:
         raise ValueError("이미지를 해독할 수 없습니다. AI/PDF 파일이거나 손상된 파일입니다.")
-    
+
     max_dim = 600
     height, width = img.shape
     scale_factor = 1.0
@@ -54,9 +54,11 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
     tatami_pixels = np.sum(dist_transform >= 15)
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
+
 @app.get("/")
-def read_root():
-    return {"status": "awake", "message": "서버가 정상 작동 중입니다."}
+def serve_index():
+    return FileResponse("index.html")
+
 
 @app.post("/api/estimate")
 def estimate_embroidery(
@@ -69,16 +71,16 @@ def estimate_embroidery(
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            return JSONResponse(status_code=500, content={"expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."})
+            return JSONResponse(status_code=500, content={
+                "expert_quote": "❌ Render.com에 GEMINI_API_KEY가 설정되지 않았습니다."
+            })
 
         image_bytes = file.file.read()
         filename = file.filename.lower() if file.filename else ""
         mime_type = file.content_type if file.content_type else "image/png"
 
-        # ★ AI 및 PDF 파일 고화질 이미지 변환 로직
         if filename.endswith(".ai") or filename.endswith(".pdf"):
             if not HAS_FITZ:
-                # requirements.txt 세팅을 실수하셨을 경우 서버가 죽지 않고 화면에 친절히 에러를 띄웁니다.
                 return JSONResponse(status_code=500, content={
                     "expert_quote": "<div style='text-align:center; color:#e74c3c;'><strong>❌ 서버 설정 오류</strong><br>서버에 일러스트 해독기(PyMuPDF)가 설치되지 않았습니다.<br>깃허브 requirements.txt에 pymupdf를 꼭 추가해주세요.</div>"
                 })
@@ -105,10 +107,10 @@ def estimate_embroidery(
         estimated_stitches = int(base_stitches * size_ratio)
         if estimated_stitches < 1000:
             estimated_stitches = 1000
-            
+
         KST = timezone(timedelta(hours=9))
         today_date = datetime.now(KST).strftime("%Y-%m-%d")
-        
+
         prompt = f"""
         당신은 20년 이상의 실무 경험을 갖춘 수석 디지털 자수 디자이너이자 B2B 의류 생산 전문가입니다. 
         사용자가 업로드한 도안과 [고객 요청 옵션]을 바탕으로, 고객에게 깊은 신뢰감을 주고 브랜드의 가치를 높여줄 수 있는 보편적이면서도 세련된 견적서를 작성해주세요.
@@ -155,17 +157,21 @@ def estimate_embroidery(
              </div>
            </div>
         """
-        
+
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         return {"expert_quote": response.text}
-        
+
     except Exception as e:
         error_msg = traceback.format_exc()
         print(error_msg)
-        return JSONResponse(status_code=500, content={"error_detail": str(e), "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"})
+        return JSONResponse(status_code=500, content={
+            "error_detail": str(e),
+            "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"
+        })
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
