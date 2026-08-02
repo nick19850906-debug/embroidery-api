@@ -27,10 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 기본 설정으로 원상 복구 (새 API 키로 속도 문제 해결됨)
+# 🚀 에러를 유발했던 timeout 옵션을 제거하고 기본 설정으로 복구 (새 API 키 적용 완료)
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY")
-)
 )
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
