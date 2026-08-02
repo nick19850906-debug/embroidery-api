@@ -1,24 +1,3 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-# ... 기존에 있던 다른 import 문들 ...
-
-app = FastAPI()
-
-# 1. 여기에만 방금 알려드린 CORS 설정을 추가합니다.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://tjl.imweb.me", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# 2. 기존에 은익님이 짜두셨던 코드는 수정이나 생략 없이 그대로 둡니다!
-@app.post("/api/estimate")
-async def estimate_embroidery(file: UploadFile = File(...), width: str = Form(...), ...): # <- 여기는 은익님의 원래 진짜 코드
-    # 은익님이 원래 작성하셨던 내부 로직들...
-    return {"expert_quote": ...}
-
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,16 +18,16 @@ except ImportError:
 
 app = FastAPI()
 
+# --- CORS 설정 (아임웹 연동) ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 모든 도메인(아임웹 포함) 허용
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
@@ -75,11 +54,9 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
     tatami_pixels = np.sum(dist_transform >= 15)
     return int(((satin_pixels * 0.15) + (tatami_pixels * 0.25)) * scale_factor)
 
-
 @app.get("/")
 def serve_index():
     return FileResponse("index.html")
-
 
 @app.post("/api/estimate")
 def estimate_embroidery(
@@ -154,29 +131,29 @@ def estimate_embroidery(
         [응답 서식]
         - 순수 HTML 태그만 출력 (Markdown 금지)
         - 다음 HTML 구조 엄수:
-           <div class="quote-wrapper">
-             <div class="quote-header">
-               <h2>자수 도안 분석 및 견적서</h2>
-               <p class="quote-date">발행일: {today_date}</p>
-             </div>
-             <div class="quote-body">
-               <div class="analysis-section">
-                 <h3>디자인 및 옵션 분석</h3>
-                 <p>[도안의 형태적 특징, 시각적 밸런스, 그리고 선택한 원단과 자수 기법이 어떻게 조화를 이루어 최고 품질의 결과물을 만들어낼 수 있는지 실무적인 어조로 해설하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 삽입하여 줄바꿈을 해주세요.]</p>
-               </div>
-               <div class="table-section">
-                 <h3>견적 내역 ({quantity}장 기준)</h3>
-                 <table>
-                   <thead><tr><th>항목</th><th>상세 내용</th><th>금액 (KRW)</th></tr></thead>
-                   <tbody>
-                     <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액]원</td></tr>
-                     <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액]원</td></tr>
-                     <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액]원</td></tr>
-                   </tbody>
-                 </table>
-               </div>
-             </div>
-           </div>
+          <div class="quote-wrapper">
+            <div class="quote-header">
+              <h2>자수 도안 분석 및 견적서</h2>
+              <p class="quote-date">발행일: {today_date}</p>
+            </div>
+            <div class="quote-body">
+              <div class="analysis-section">
+                <h3>디자인 및 옵션 분석</h3>
+                <p>[도안의 형태적 특징, 시각적 밸런스, 그리고 선택한 원단과 자수 기법이 어떻게 조화를 이루어 최고 품질의 결과물을 만들어낼 수 있는지 실무적인 어조로 해설하세요. ★문단이 길어질 경우 반드시 중간에 <br><br> 태그를 삽입하여 줄바꿈을 해주세요.]</p>
+              </div>
+              <div class="table-section">
+                <h3>견적 내역 ({quantity}장 기준)</h3>
+                <table>
+                  <thead><tr><th>항목</th><th>상세 내용</th><th>금액 (KRW)</th></tr></thead>
+                  <tbody>
+                    <tr><td>초기 세팅비 (펀칭비)</td><td>패턴 분석 및 1회성 디지타이징</td><td>[계산 금액]원</td></tr>
+                    <tr><td>자수 가공비</td><td>[할증 및 수량 할인 적용 내용 명시]</td><td>[계산 금액]원</td></tr>
+                    <tr class="total-row"><td>총 합계</td><td>(VAT 별도)</td><td>[총 합계 금액]원</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         """
 
         response = client.models.generate_content(
@@ -192,7 +169,6 @@ def estimate_embroidery(
             "error_detail": str(e),
             "expert_quote": f"❌ 서버 내부 오류 발생: {str(e)}"
         })
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
