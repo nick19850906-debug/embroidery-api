@@ -56,7 +56,7 @@ def calculate_stitch_count(image_bytes: bytes) -> int:
 
 @app.get("/")
 def serve_index():
-    return FileResponse("index.html")
+    return {"status": "ok", "message": "Jasu Lab API is running!"}
 
 @app.post("/api/estimate")
 def estimate_embroidery(
