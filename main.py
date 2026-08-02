@@ -31,7 +31,7 @@ app.add_middleware(
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY")
 )
-
+)
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
