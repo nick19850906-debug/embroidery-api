@@ -27,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 기존 API 키 적용 완료
+# 🚀 VIP 권한이 있는 기존 API 키 적용
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY")
 )
@@ -187,9 +187,9 @@ def estimate_embroidery(
         """
 
         print("👉 [LOG] 3. 구글 제미나이(Gemini)에 디테일 옵션 포함하여 분석 요청 전송 중...")
-        # ⭕ 원래 API 키와 완벽하게 호환되는 가장 안정적인 기본 모델명!
+        # ⭕ 원래 API 키와 찰떡궁합인 최신형 2.5 모델로 복구 완료!
         response = client.models.generate_content(
-            model="gemini-1.5-flash", 
+            model="gemini-2.5-flash", 
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         print("👉 [LOG] 4. 분석 및 견적 다이어그램 생성 완료! 프론트엔드로 응답합니다.")
