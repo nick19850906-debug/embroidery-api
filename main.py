@@ -27,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 에러를 유발했던 timeout 옵션을 제거하고 기본 설정으로 복구 (새 API 키 적용 완료)
+# 🚀 새 API 키 적용 완료
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY")
 )
@@ -186,9 +186,9 @@ def estimate_embroidery(
         </div>
         """
 
-       print("👉 [LOG] 3. 구글 제미나이(Gemini)에 디테일 옵션 포함하여 분석 요청 전송 중...")
+        print("👉 [LOG] 3. 구글 제미나이(Gemini)에 디테일 옵션 포함하여 분석 요청 전송 중...")
         response = client.models.generate_content(
-            model="gemini-1.5-flash", # ⭕ 숫자 2.5를 1.5로만 바꿔주세요!
+            model="gemini-1.5-flash", 
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         print("👉 [LOG] 4. 분석 및 견적 다이어그램 생성 완료! 프론트엔드로 응답합니다.")
