@@ -186,9 +186,10 @@ def estimate_embroidery(
         </div>
         """
 
-       print("👉 [LOG] 3. 구글 제미나이(Gemini)에 디테일 옵션 포함하여 분석 요청 전송 중...")
+        print("👉 [LOG] 3. 구글 제미나이(Gemini)에 디테일 옵션 포함하여 분석 요청 전송 중...")
+        # ⭕ 신규 발급 키도 완벽하게 통과하는 최신 2.0 모델명 적용 완료!
         response = client.models.generate_content(
-            model="gemini-2.0-flash",  # ⭕ 현재 가장 안정적인 공식 최신 모델!
+            model="gemini-2.0-flash", 
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         print("👉 [LOG] 4. 분석 및 견적 다이어그램 생성 완료! 프론트엔드로 응답합니다.")
