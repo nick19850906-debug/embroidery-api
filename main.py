@@ -1,3 +1,29 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI()
+
+# --- CORS 설정 추가 시작 ---
+origins = [
+    "https://tjl.imweb.me",  # 실제 운영 중인 아임웹 도메인 허용
+    "http://localhost:3000", # (선택) 로컬 테스트용
+    # 필요시 "*" 를 넣어 모든 도메인을 허용할 수도 있습니다.
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # GET, POST, OPTIONS 등 모든 메서드 허용
+    allow_headers=["*"],  # 모든 헤더 허용
+)
+# --- CORS 설정 추가 끝 ---
+
+# 기존 라우터 코드들...
+@app.post("/api/estimate")
+async def estimate_embroidery(...):
+    ...
+
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
