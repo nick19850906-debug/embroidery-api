@@ -27,7 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 새 API 키 적용 완료
+# 🚀 기존 API 키 적용 완료
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY")
 )
@@ -187,8 +187,9 @@ def estimate_embroidery(
         """
 
         print("👉 [LOG] 3. 구글 제미나이(Gemini)에 디테일 옵션 포함하여 분석 요청 전송 중...")
+        # ⭕ 원래 API 키와 완벽하게 호환되는 가장 안정적인 기본 모델명!
         response = client.models.generate_content(
-            model="gemini-1.5-flash-latest", # ⭕ 무료 한도가 열려있는 모델로 수정
+            model="gemini-1.5-flash", 
             contents=[prompt, types.Part.from_bytes(data=image_bytes, mime_type=mime_type)]
         )
         print("👉 [LOG] 4. 분석 및 견적 다이어그램 생성 완료! 프론트엔드로 응답합니다.")
