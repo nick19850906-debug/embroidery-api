@@ -27,11 +27,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 무한 로딩 방지를 위해 대기 시간을 90초로 넉넉하게 연장
+# 🚀 기본 설정으로 원상 복구 (새 API 키로 속도 문제 해결됨)
 client = genai.Client(
-    api_key=os.environ.get("GEMINI_API_KEY"),
-    http_options={"timeout": 90.0}
+    api_key=os.environ.get("GEMINI_API_KEY")
 )
+
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
     nparr = np.frombuffer(image_bytes, np.uint8)
