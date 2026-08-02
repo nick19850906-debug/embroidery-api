@@ -27,10 +27,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 무한 로딩 방지를 위한 타임아웃 방어막 설정
+# 🚀 무한 로딩 방지를 위해 대기 시간을 90초로 넉넉하게 연장
 client = genai.Client(
     api_key=os.environ.get("GEMINI_API_KEY"),
-    http_options={"timeout": 45.0}
+    http_options={"timeout": 90.0}
 )
 
 def calculate_stitch_count(image_bytes: bytes) -> int:
